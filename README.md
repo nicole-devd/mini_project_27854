@@ -1,17 +1,20 @@
-# my_week
 
-A new Flutter project.
+# My Week
 
-## Getting Started
+My Week is a Flutter application that helps users organise and manage their weekly schedules.
 
-This project is a starting point for a Flutter application.
+It signs users in with Firebase Authentication, and each user's data is saved in Cloud Firestore under their own id, so two accounts never see each other's data, and every change appears live.
 
-A few resources to get you started if this is your first Flutter project:
+## Screenshots
 
-- [Learn Flutter](https://docs.flutter.dev/get-started/learn-flutter)
-- [Write your first Flutter app](https://docs.flutter.dev/get-started/codelab)
-- [Flutter learning resources](https://docs.flutter.dev/reference/learning-resources)
+### Login Screen
+![Login](screenshots/login.png)
 
-For help getting started with Flutter development, view the
-[online documentation](https://docs.flutter.dev/), which offers tutorials,
-samples, guidance on mobile development, and a full API reference.
+### My Data in Firestore
+![My data in Firestore](screenshots/console.png)
+
+### Live Update
+![Live update](screenshots/live.png)
+
+### Second Account
+![Second account sees nothing of mine](screenshots/denied.png)

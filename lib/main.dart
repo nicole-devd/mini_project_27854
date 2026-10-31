@@ -1,4 +1,5 @@
 
+import 'dart:async';
 import 'package:flutter/material.dart';
 import 'package:firebase_core/firebase_core.dart';
 import 'package:firebase_auth/firebase_auth.dart';
@@ -234,10 +235,15 @@ class _MyWeekScreenState extends State<MyWeekScreen> {
 
   bool loading = true;
   bool weatherLoading = true;
+  bool sampleItemsAdded = false;
+
   String? weatherError;
+  String? databaseError;
+
   Map<String, dynamic>? weather;
 
-  String? databaseError;
+  StreamSubscription<QuerySnapshot<Map<String, dynamic>>>?
+  coursesSubscription;
 
   final WeatherService weatherService = WeatherService();
 
@@ -263,67 +269,88 @@ class _MyWeekScreenState extends State<MyWeekScreen> {
   @override
   void initState() {
     super.initState();
-    loadItems();
+    listenToItems();
     loadWeather();
   }
 
-  Future<void> loadItems() async {
-    try {
-      final snapshot = await courses.get();
+  void listenToItems() {
+    coursesSubscription?.cancel();
 
-      if (snapshot.docs.isEmpty) {
-        final sampleItems = [
-          ScheduleItem(
-            name: 'Database Systems',
-            day: 'Monday',
-            startTime: '09:00',
-            endTime: '11:00',
-          ),
-          ScheduleItem(
-            name: 'Big Data Analytics',
-            day: 'Wednesday',
-            startTime: '10:00',
-            endTime: '12:00',
-          ),
-          ScheduleItem(
-            name: 'Mobile Application Development',
-            day: 'Friday',
-            startTime: '14:00',
-            endTime: '16:00',
-          ),
-        ];
+    coursesSubscription = courses.snapshots().listen(
+          (snapshot) async {
+        if (snapshot.docs.isEmpty && !sampleItemsAdded) {
+          sampleItemsAdded = true;
 
-        for (final item in sampleItems) {
-          final document = await courses.add(item.toJson());
-          items.add(item);
-          itemIds.add(document.id);
+          final sampleItems = [
+            ScheduleItem(
+              name: 'Database Systems',
+              day: 'Monday',
+              startTime: '09:00',
+              endTime: '11:00',
+            ),
+            ScheduleItem(
+              name: 'Big Data Analytics',
+              day: 'Wednesday',
+              startTime: '10:00',
+              endTime: '12:00',
+            ),
+            ScheduleItem(
+              name: 'Mobile Application Development',
+              day: 'Friday',
+              startTime: '14:00',
+              endTime: '16:00',
+            ),
+          ];
+
+          try {
+            for (final item in sampleItems) {
+              await courses.add(item.toJson());
+            }
+          } catch (e) {
+            if (!mounted) return;
+
+            setState(() {
+              loading = false;
+              databaseError = e.toString();
+            });
+          }
+
+          return;
         }
-      } else {
-        for (final document in snapshot.docs) {
-          items.add(ScheduleItem.fromJson(document.data()));
-          itemIds.add(document.id);
-        }
-      }
 
-      if (!mounted) return;
+        if (!mounted) return;
 
-      setState(() {
-        loading = false;
-        databaseError = null;
-      });
-    } catch (e) {
-      if (!mounted) return;
+        setState(() {
+          items = snapshot.docs
+              .map((document) => ScheduleItem.fromJson(document.data()))
+              .toList();
 
-      setState(() {
-        loading = false;
-        databaseError = e.toString();
-      });
-    }
+          itemIds = snapshot.docs
+              .map((document) => document.id)
+              .toList();
+
+          loading = false;
+          databaseError = null;
+        });
+      },
+      onError: (error) {
+        if (!mounted) return;
+
+        setState(() {
+          loading = false;
+          databaseError = error.toString();
+        });
+      },
+    );
+  }
+
+  @override
+  void dispose() {
+    coursesSubscription?.cancel();
+    super.dispose();
   }
 
   Future<void> loadWeather() async {
-    if (!mounted) return;
-
     setState(() {
       weatherLoading = true;
       weatherError = null;
@@ -370,11 +397,24 @@ class _MyWeekScreenState extends State<MyWeekScreen> {
     return int.parse(parts[0]) * 60 + int.parse(parts[1]);
   }
 
-  Future<void> addItem() async {
-    final nameController = TextEditingController();
-    final dayController = TextEditingController(text: 'Monday');
-    final startController = TextEditingController();
-    final endController = TextEditingController();
+  Future<void> showCourseDialog({int? editIndex}) async {
+    final editing = editIndex != null;
+
+    final nameController = TextEditingController(
+      text: editing ? items[editIndex].name : '',
+    );
+
+    final dayController = TextEditingController(
+      text: editing ? items[editIndex].day : 'Monday',
+    );
+
+    final startController = TextEditingController(
+      text: editing ? items[editIndex].startTime : '',
+    );
+
+    final endController = TextEditingController(
+      text: editing ? items[editIndex].endTime : '',
+    );
 
     String? validationError;
 
@@ -384,7 +424,7 @@ class _MyWeekScreenState extends State<MyWeekScreen> {
         return StatefulBuilder(
           builder: (context, setDialogState) {
             return AlertDialog(
-              title: const Text('Add a course'),
+              title: Text(editing ? 'Edit course' : 'Add a course'),
               content: SingleChildScrollView(
                 child: Column(
                   mainAxisSize: MainAxisSize.min,
@@ -465,6 +505,12 @@ class _MyWeekScreenState extends State<MyWeekScreen> {
                         day: matchingDays.first,
                         startTime: start,
                         endTime: end,
+                        category: editing
+                            ? items[editIndex].category
+                            : 'Study',
+                        isCompleted: editing
+                            ? items[editIndex].isCompleted
+                            : false,
                       ),
                     );
                   },
@@ -485,14 +531,13 @@ class _MyWeekScreenState extends State<MyWeekScreen> {
     if (!mounted || newItem == null) return;
 
     try {
-      final document = await courses.add(newItem.toJson());
-
-      if (!mounted) return;
-
-      setState(() {
-        items.add(newItem);
-        itemIds.add(document.id);
-      });
+      if (editing) {
+        await courses.doc(itemIds[editIndex]).update(
+          newItem.toJson(),
+        );
+      } else {
+        await courses.add(newItem.toJson());
+      }
     } catch (e) {
       if (!mounted) return;
 
@@ -531,13 +576,6 @@ class _MyWeekScreenState extends State<MyWeekScreen> {
 
     try {
       await courses.doc(itemIds[index]).delete();
-
-      if (!mounted) return;
-
-      setState(() {
-        items.removeAt(index);
-        itemIds.removeAt(index);
-      });
     } catch (e) {
       if (!mounted) return;
 
@@ -553,12 +591,6 @@ class _MyWeekScreenState extends State<MyWeekScreen> {
     try {
       await courses.doc(itemIds[index]).update({
         'isCompleted': completed,
-      });
-
-      if (!mounted) return;
-
-      setState(() {
-        items[index].isCompleted = completed;
       });
     } catch (e) {
       if (!mounted) return;
@@ -690,10 +722,9 @@ class _MyWeekScreenState extends State<MyWeekScreen> {
                   setState(() {
                     loading = true;
                     databaseError = null;
-                    items.clear();
-                    itemIds.clear();
+                    sampleItemsAdded = true;
                   });
-                  loadItems();
+                  listenToItems();
                 },
                 child: const Text('Retry'),
               ),
@@ -716,7 +747,8 @@ class _MyWeekScreenState extends State<MyWeekScreen> {
                 .where((item) => item.day == day)
                 .toList()
               ..sort(
-                    (a, b) => a.startTime.compareTo(b.startTime),
+                    (a, b) =>
+                    a.startTime.compareTo(b.startTime),
               );
 
             if (dayItems.isEmpty) {
@@ -728,7 +760,8 @@ class _MyWeekScreenState extends State<MyWeekScreen> {
               children: [
                 Text(
                   day,
-                  style: Theme.of(context).textTheme.titleMedium,
+                  style:
+                  Theme.of(context).textTheme.titleMedium,
                 ),
                 ...dayItems.map((item) {
                   final index = items.indexOf(item);
@@ -746,9 +779,24 @@ class _MyWeekScreenState extends State<MyWeekScreen> {
                         '${item.startTime} - ${item.endTime} '
                             '• ${item.category}',
                       ),
-                      trailing: IconButton(
-                        icon: const Icon(Icons.delete),
-                        onPressed: () => deleteItem(index),
+                      trailing: Row(
+                        mainAxisSize: MainAxisSize.min,
+                        children: [
+                          IconButton(
+                            icon: const Icon(Icons.edit),
+                            onPressed: () {
+                              showCourseDialog(
+                                editIndex: index,
+                              );
+                            },
+                          ),
+                          IconButton(
+                            icon: const Icon(Icons.delete),
+                            onPressed: () {
+                              deleteItem(index);
+                            },
+                          ),
+                        ],
                       ),
                     ),
                   );
@@ -762,7 +810,9 @@ class _MyWeekScreenState extends State<MyWeekScreen> {
       floatingActionButton: loading || databaseError != null
           ? null
           : FloatingActionButton(
-        onPressed: addItem,
+        onPressed: () {
+          showCourseDialog();
+        },
         child: const Icon(Icons.add),
       ),
     );
